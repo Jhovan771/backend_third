@@ -25,9 +25,9 @@ db.getConnection((err, connection) => {
   }
 });
 
-app.use(cors());
+// app.use(cors());
 
-app.options("*", cors());
+// app.options("*", cors());
 
 app.use(express.json());
 app.use(bodyParser.urlencoded({ extended: true }));
@@ -44,14 +44,14 @@ const transporter = nodemailer.createTransport({
 });
 
 // CORS CONFIGURATION
-// const corsOptions = {
-//   origin: [/https:\/\/th-speak\.vercel\.app($|\/.*)/], // Regex to match the origin and any subpaths
-//   methods: "GET,PUT,POST,DELETE",
-//   allowedHeaders: ["Content-Type", "Authorization"],
-//   credentials: true,
-// };
+const corsOptions = {
+  origin: [/https:\/\/th-speak\.vercel\.app($|\/.*)/], // Regex to match the origin and any subpaths
+  methods: "GET,PUT,POST,DELETE",
+  allowedHeaders: ["Content-Type", "Authorization"],
+  credentials: true,
+};
 
-// app.use(cors(corsOptions));
+app.use(cors(corsOptions));
 
 // Login into user account start
 app.post("/login", (req, res) => {
