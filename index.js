@@ -25,9 +25,9 @@ db.getConnection((err, connection) => {
   }
 });
 
-// app.use(cors());
+app.use(cors());
 
-// app.options("*", cors());
+app.options("*", cors());
 
 app.use(express.json());
 app.use(bodyParser.urlencoded({ extended: true }));
@@ -44,14 +44,14 @@ const transporter = nodemailer.createTransport({
 });
 
 // CORS CONFIGURATION
-const corsOptions = {
-  origin: [/https:\/\/th-speak\.vercel\.app($|\/.*)/], // Regex to match the origin and any subpaths
-  methods: "GET,PUT,POST,DELETE",
-  allowedHeaders: ["Content-Type", "Authorization"],
-  credentials: true,
-};
+// const corsOptions = {
+//   origin: [/https:\/\/th-speak\.vercel\.app($|\/.*)/], // Regex to match the origin and any subpaths
+//   methods: "GET,PUT,POST,DELETE",
+//   allowedHeaders: ["Content-Type", "Authorization"],
+//   credentials: true,
+// };
 
-app.use(cors(corsOptions));
+// app.use(cors(corsOptions));
 
 // Login into user account start
 app.post("/login", (req, res) => {
@@ -645,30 +645,73 @@ app.delete("/delete-story/:storyId", (req, res) => {
     return res.status(400).json({ message: "Invalid story ID" });
   }
 
+  // First, delete related records from pro_table
   db.query("DELETE FROM pro_table WHERE stories_id = ?", [storyId], (err) => {
     if (err) {
-      console.error("Error deleting words:", err);
+      console.error("Error deleting related records from pro_table:", err);
       return res.status(500).json({ message: "Internal Server Error" });
     }
 
+    // Then, get the UserID from stories_table
     db.query(
-      "DELETE FROM stories_table WHERE stories_id = ?",
+      "SELECT UserID FROM stories_table WHERE stories_id = ?",
       [storyId],
-      (err, results) => {
+      (err, userIdResult) => {
         if (err) {
-          console.error("Error deleting story:", err);
+          console.error("Error retrieving UserID from stories_table:", err);
           return res.status(500).json({ message: "Internal Server Error" });
         }
 
-        if (results.affectedRows === 0) {
-          return res.status(404).json({ message: "Story not found" });
+        // Check if UserID exists
+        if (userIdResult.length === 0 || userIdResult[0].UserID === null) {
+          return res
+            .status(404)
+            .json({ message: "User ID not found for the specified story" });
         }
 
-        res.status(200).json({ message: "Story deleted successfully." });
+        const userId = userIdResult[0].UserID;
+
+        // Then, delete related records from the table referenced by UserID in stories_table
+        db.query(
+          "DELETE FROM referenced_table WHERE UserID = ?",
+          [userId],
+          (err) => {
+            if (err) {
+              console.error(
+                "Error deleting related records referenced by UserID:",
+                err
+              );
+              return res.status(500).json({ message: "Internal Server Error" });
+            }
+
+            // Finally, delete the record from stories_table
+            db.query(
+              "DELETE FROM stories_table WHERE stories_id = ?",
+              [storyId],
+              (err, results) => {
+                if (err) {
+                  console.error("Error deleting story:", err);
+                  return res
+                    .status(500)
+                    .json({ message: "Internal Server Error" });
+                }
+
+                if (results.affectedRows === 0) {
+                  return res.status(404).json({ message: "Story not found" });
+                }
+
+                res.status(200).json({
+                  message: "Story and related records deleted successfully.",
+                });
+              }
+            );
+          }
+        );
       }
     );
   });
 });
+
 // DELETE STORIES FROM DATABASE END //
 
 // FETCHING STUDENT FOR EXAMINATION START //
@@ -703,7 +746,7 @@ app.get("/api/studentExam", (req, res) => {
 // FETCHING STUDENT FOR EXAMINATION END //
 
 // FETCH STORY AND WORDS START //
-app.get("/fetch-story/:storyId", verifyToken, (req, res) => {
+app.get("/fetch-story/:storyId", (req, res) => {
   const storyId = req.params.storyId;
 
   db.query(
@@ -717,9 +760,7 @@ app.get("/fetch-story/:storyId", verifyToken, (req, res) => {
 
       if (!storyResults || storyResults.length === 0) {
         console.log("No results found for story ID:", storyId);
-        return res
-          .status(404)
-          .json({ message: "No results found for story ID" });
+        return res.status(404).json({ message: "No results found" });
       }
 
       db.query(
@@ -743,6 +784,7 @@ app.get("/fetch-story/:storyId", verifyToken, (req, res) => {
     }
   );
 });
+
 // FETCH STORY AND WORDS END //
 
 // SUBMIT SCORE TO DATABASE START //
