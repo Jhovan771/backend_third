@@ -703,7 +703,7 @@ app.get("/api/studentExam", (req, res) => {
 // FETCHING STUDENT FOR EXAMINATION END //
 
 // FETCH STORY AND WORDS START //
-app.get("/fetch-story/:storyId", (req, res) => {
+app.get("/fetch-story/:storyId", verifyToken, (req, res) => {
   const storyId = req.params.storyId;
 
   db.query(
@@ -717,7 +717,9 @@ app.get("/fetch-story/:storyId", (req, res) => {
 
       if (!storyResults || storyResults.length === 0) {
         console.log("No results found for story ID:", storyId);
-        return res.status(404).json({ message: "No results found" });
+        return res
+          .status(404)
+          .json({ message: "No results found for story ID" });
       }
 
       db.query(
@@ -741,7 +743,6 @@ app.get("/fetch-story/:storyId", (req, res) => {
     }
   );
 });
-
 // FETCH STORY AND WORDS END //
 
 // SUBMIT SCORE TO DATABASE START //
