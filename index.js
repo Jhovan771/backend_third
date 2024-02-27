@@ -13,7 +13,7 @@ const db = mysql2.createPool({
   host: "sql.freedb.tech",
   user: "freedb_hueco",
   password: "?WmvH3c$&E8TsUZ",
-  database: "ThesisDB",
+  database: "thesis2",
 });
 
 app.use(cors());
