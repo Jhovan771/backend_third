@@ -184,17 +184,34 @@ app.post("/api/insection", (req, res) => {
   const sname = req.body.sname;
   const userID = req.body.userID;
 
-  const sqlInsert = "INSERT INTO section_list (sname, UserID) VALUES (?, ?)";
+  // Query to get the highest section ID
+  const sqlSelect = "SELECT MAX(sectionID) AS maxID FROM section_list";
 
-  db.query(sqlInsert, [sname, userID], (err, result) => {
+  db.query(sqlSelect, (err, result) => {
     if (err) {
       console.log(err);
-      res
-        .status(500)
-        .send("Request failed, error inserting data into the database.");
+      res.status(500).send("Request failed, error querying the database.");
     } else {
-      console.log("Data inserted successfully.");
-      res.status(200).send("Data inserted successfully.");
+      // Calculate the new section ID
+      let newSectionID = (result[0].maxID || 0) + 1; // If no existing sections, start from 1
+
+      // Pad the section ID with leading zeros up to 3 digits
+      newSectionID = newSectionID.toString().padStart(3, "0");
+
+      // Insert the new section with the generated section ID
+      const sqlInsert =
+        "INSERT INTO section_list (sectionID, sname, UserID) VALUES (?, ?, ?)";
+      db.query(sqlInsert, [newSectionID, sname, userID], (err, result) => {
+        if (err) {
+          console.log(err);
+          res
+            .status(500)
+            .send("Request failed, error inserting data into the database.");
+        } else {
+          console.log("Data inserted successfully.");
+          res.status(200).send("Data inserted successfully.");
+        }
+      });
     }
   });
 });
@@ -645,71 +662,37 @@ app.delete("/delete-story/:storyId", (req, res) => {
     return res.status(400).json({ message: "Invalid story ID" });
   }
 
-  // First, delete related records from pro_table
-  db.query("DELETE FROM pro_table WHERE stories_id = ?", [storyId], (err) => {
-    if (err) {
-      console.error("Error deleting related records from pro_table:", err);
-      return res.status(500).json({ message: "Internal Server Error" });
-    }
-
-    // Then, get the UserID from stories_table
-    db.query(
-      "SELECT UserID FROM stories_table WHERE stories_id = ?",
-      [storyId],
-      (err, userIdResult) => {
-        if (err) {
-          console.error("Error retrieving UserID from stories_table:", err);
-          return res.status(500).json({ message: "Internal Server Error" });
-        }
-
-        // Check if UserID exists
-        if (userIdResult.length === 0 || userIdResult[0].UserID === null) {
-          return res
-            .status(404)
-            .json({ message: "User ID not found for the specified story" });
-        }
-
-        const userId = userIdResult[0].UserID;
-
-        // Then, delete related records from the table referenced by UserID in stories_table
-        db.query(
-          "DELETE FROM referenced_table WHERE UserID = ?",
-          [userId],
-          (err) => {
-            if (err) {
-              console.error(
-                "Error deleting related records referenced by UserID:",
-                err
-              );
-              return res.status(500).json({ message: "Internal Server Error" });
-            }
-
-            // Finally, delete the record from stories_table
-            db.query(
-              "DELETE FROM stories_table WHERE stories_id = ?",
-              [storyId],
-              (err, results) => {
-                if (err) {
-                  console.error("Error deleting story:", err);
-                  return res
-                    .status(500)
-                    .json({ message: "Internal Server Error" });
-                }
-
-                if (results.affectedRows === 0) {
-                  return res.status(404).json({ message: "Story not found" });
-                }
-
-                res.status(200).json({
-                  message: "Story and related records deleted successfully.",
-                });
-              }
-            );
-          }
-        );
+  // Delete related records from stories_table first
+  db.query(
+    "DELETE FROM stories_table WHERE stories_id = ?",
+    [storyId],
+    (err, results) => {
+      if (err) {
+        console.error("Error deleting story:", err);
+        return res.status(500).json({ message: "Internal Server Error" });
       }
-    );
-  });
+
+      if (results.affectedRows === 0) {
+        return res.status(404).json({ message: "Story not found" });
+      }
+
+      // Once related records are deleted, delete related records from pro_table
+      db.query(
+        "DELETE FROM pro_table WHERE stories_id = ?",
+        [storyId],
+        (err) => {
+          if (err) {
+            console.error("Error deleting words:", err);
+            return res.status(500).json({ message: "Internal Server Error" });
+          }
+
+          res.status(200).json({
+            message: "Story and related records deleted successfully.",
+          });
+        }
+      );
+    }
+  );
 });
 
 // DELETE STORIES FROM DATABASE END //
