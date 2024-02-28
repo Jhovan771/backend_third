@@ -422,56 +422,119 @@ app.delete("/api/studentData/:id", async (req, res) => {
 });
 // Delete Student on List End //
 
-// UPDATE TOTAL SCORE START //
-app.post("/api/updateTotalScore", (req, res) => {
-  const { studentID, newScore } = req.body;
-  console.log(
-    "Received request to update total_score for student ID:",
-    studentID
-  );
+// STORE SCORES ON ATTEMPTS AT STUDENT_LIST START //
+app.post("/api/submitAttemptScore", async (req, res) => {
+  try {
+    const { studentID, attemptScore } = req.body;
+    console.log(
+      "Received request to submit attempt score for student ID:",
+      studentID
+    );
 
-  const sqlSelectTotalScore =
-    "SELECT total_score, initial_grade FROM student_list WHERE id = ?";
-  db.query(sqlSelectTotalScore, [studentID], (err, results) => {
-    if (err) {
-      console.error(err);
-      res.status(500).send("Error fetching current total_score");
-    } else {
-      const currentTotalScore = results[0].total_score;
-      const updatedTotalScore = currentTotalScore + newScore;
+    const student = await student_list.findByPk(studentID);
 
-      // Calculate percentage
-      const percentage = ((updatedTotalScore / 120) * 100).toFixed(2);
-      console.log("Percentage to update:", percentage);
-
-      // Check if initial_grade is null and update it
-      let initialGrade = results[0].initial_grade;
-      if (initialGrade === null) {
-        initialGrade = percentage;
-      }
-
-      const sqlUpdate =
-        "UPDATE student_list SET total_score = ?, initial_grade = ? WHERE id = ?";
-      db.query(
-        sqlUpdate,
-        [updatedTotalScore, initialGrade, studentID],
-        (err, updateResults) => {
-          if (err) {
-            console.error(err);
-            res
-              .status(500)
-              .send("Error updating total_score and initial_grade");
-          } else {
-            console.log("Total score and initial_grade updated successfully");
-            res
-              .status(200)
-              .send("Total score and initial_grade updated successfully");
-          }
-        }
-      );
+    if (!student) {
+      console.log("Student not found");
+      return res.status(404).send("Student not found");
     }
-  });
+
+    let updatedAttempt = null;
+
+    // Find the first empty attempt column and update it with the attemptScore
+    const emptyAttemptColumn = [
+      "attempt_one",
+      "attempt_two",
+      "attempt_three",
+    ].find((column) => student[column] === null);
+
+    if (emptyAttemptColumn) {
+      console.log("Updating attempt score in column:", emptyAttemptColumn);
+      // Update the empty attempt column
+      await StudentList.update(
+        { [emptyAttemptColumn]: attemptScore },
+        { where: { id: studentID } }
+      );
+      updatedAttempt = { [emptyAttemptColumn]: attemptScore };
+    } else {
+      // If all attempts are already made, return error
+      console.log("All attempts are already made");
+      return res.status(400).send("All attempts are already made");
+    }
+
+    console.log("Attempt score updated successfully:", updatedAttempt);
+    res.status(200).json(updatedAttempt);
+  } catch (error) {
+    console.error(error);
+    res.status(500).send("An error occurred while updating attempt score");
+  }
 });
+
+// STORE SCORES ON ATTEMPTS AT STUDENT_LIST END //
+
+// UPDATE TOTAL SCORE START //
+app.post("/api/submitAttemptScore", async (req, res) => {
+  try {
+    const { studentID, attemptScore } = req.body;
+    console.log(
+      "Received request to submit attempt score for student ID:",
+      studentID
+    );
+
+    const sqlSelectStudent = "SELECT * FROM student_list WHERE id = ?";
+    db.query(sqlSelectStudent, [studentID], async (err, results) => {
+      if (err) {
+        console.error(err);
+        res.status(500).send("Error fetching student");
+      } else {
+        if (results.length === 0) {
+          console.log("Student not found");
+          return res.status(404).send("Student not found");
+        }
+
+        const student = results[0];
+        let updatedAttempt = null;
+
+        // Find the first empty attempt column and update it with the attemptScore
+        const emptyAttemptColumn = [
+          "attempt_one",
+          "attempt_two",
+          "attempt_three",
+        ].find((column) => student[column] === null);
+
+        if (emptyAttemptColumn) {
+          console.log("Updating attempt score in column:", emptyAttemptColumn);
+          const sqlUpdateAttempt =
+            "UPDATE student_list SET ?? = ? WHERE id = ?";
+          db.query(
+            sqlUpdateAttempt,
+            [emptyAttemptColumn, attemptScore, studentID],
+            (err, updateResults) => {
+              if (err) {
+                console.error(err);
+                res.status(500).send("Error updating attempt score");
+              } else {
+                updatedAttempt = { [emptyAttemptColumn]: attemptScore };
+                console.log(
+                  "Attempt score updated successfully:",
+                  updatedAttempt
+                );
+                res.status(200).json(updatedAttempt);
+              }
+            }
+          );
+        } else {
+          // If all attempts are already made, return error
+          console.log("All attempts are already made");
+          res.status(400).send("All attempts are already made");
+        }
+      }
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).send("An error occurred while updating attempt score");
+  }
+});
+
 // UPDATE TOTAL SCORE END //
 
 // FETCHING A SINGLE STUDENT START //
