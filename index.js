@@ -10,10 +10,10 @@ const secretKey =
   process.env.SECRET_KEY || "gV2$r9^uLpQw3ZtYxYzA#dG!kLmNp3s6v9y/B?E";
 
 const db = mysql2.createPool({
-  host: "sql.freedb.tech",
-  user: "freedb_jhovan",
-  password: "2n3wPx&R6vg57te",
-  database: "freedb_thesis2",
+  host: "localhost",
+  user: "root",
+  password: "01.God_is_Able",
+  database: "thesis2_db",
 });
 
 db.getConnection((err, connection) => {
@@ -25,9 +25,9 @@ db.getConnection((err, connection) => {
   }
 });
 
-// app.use(cors());
+app.use(cors());
 
-// app.options("*", cors());
+app.options("*", cors());
 
 app.use(express.json());
 app.use(bodyParser.urlencoded({ extended: true }));
@@ -44,14 +44,14 @@ const transporter = nodemailer.createTransport({
 });
 
 // CORS CONFIGURATION
-const corsOptions = {
-  origin: [/https:\/\/th-speak\.vercel\.app($|\/.*)/], // Regex to match the origin and any subpaths
-  methods: "GET,PUT,POST,DELETE",
-  allowedHeaders: ["Content-Type", "Authorization"],
-  credentials: true,
-};
+// const corsOptions = {
+//   origin: [/https:\/\/th-speak\.vercel\.app($|\/.*)/], // Regex to match the origin and any subpaths
+//   methods: "GET,PUT,POST,DELETE",
+//   allowedHeaders: ["Content-Type", "Authorization"],
+//   credentials: true,
+// };
 
-app.use(cors(corsOptions));
+// app.use(cors(corsOptions));
 
 // Login into user account start
 app.post("/login", (req, res) => {
@@ -930,6 +930,58 @@ app.get("/api/getGraphData", async (req, res) => {
 });
 // FETCH DATA FOR GRAPH END //
 
+// UPDATE TOTAL SCORE START //
+app.post("/api/updateTotalScore", (req, res) => {
+  const { studentID, newScore } = req.body;
+  console.log(
+    "Received request to update total_score for student ID:",
+    studentID
+  );
+
+  const sqlSelectTotalScore =
+    "SELECT total_score, initial_grade FROM student_list WHERE id = ?";
+  db.query(sqlSelectTotalScore, [studentID], (err, results) => {
+    if (err) {
+      console.error(err);
+      res.status(500).send("Error fetching current total_score");
+    } else {
+      const currentTotalScore = results[0].total_score;
+      const updatedTotalScore = currentTotalScore + newScore;
+
+      // Calculate percentage
+      const percentage = ((updatedTotalScore / 120) * 100).toFixed(2);
+      console.log("Percentage to update:", percentage);
+
+      // Check if initial_grade is null and update it
+      let initialGrade = results[0].initial_grade;
+      if (initialGrade === null) {
+        initialGrade = percentage;
+      }
+
+      const sqlUpdate =
+        "UPDATE student_list SET total_score = ?, initial_grade = ? WHERE id = ?";
+      db.query(
+        sqlUpdate,
+        [updatedTotalScore, initialGrade, studentID],
+        (err, updateResults) => {
+          if (err) {
+            console.error(err);
+            res
+              .status(500)
+              .send("Error updating total_score and initial_grade");
+          } else {
+            console.log("Total score and initial_grade updated successfully");
+            res
+              .status(200)
+              .send("Total score and initial_grade updated successfully");
+          }
+        }
+      );
+    }
+  });
+});
+// UPDATE TOTAL SCORE END //
+
 // COMPUTE FINAL GRADE START //
 // Function to scale the initial grade based on the specified conditions
 function scaleInitialGrade(initialGrade, scale) {
@@ -999,6 +1051,132 @@ app.get("/api/computeFinalGrades", async (req, res) => {
   } catch (error) {
     console.error("Error fetching students:", error);
     res.status(500).send("Internal Server Error");
+  }
+});
+
+//---------- Store Attempt Scores ------------- //
+app.post("/api/storeAttemptScores", (req, res) => {
+  const { studentID, unitNumber, activityNumber, attemptScores } = req.body;
+  const { attempt_1, attempt_2, attempt_3 } = attemptScores;
+
+  // Calculate total score
+  const totalScore = attempt_1 + attempt_2 + attempt_3;
+
+  // Check if the act_no and unit_no are already present
+  const checkQuery = `
+    SELECT * FROM attempt_score WHERE student_id = ? AND unit_no = ? AND act_no = ?
+  `;
+  const checkValues = [studentID, unitNumber, activityNumber];
+
+  db.query(checkQuery, checkValues, (error, results) => {
+    if (error) {
+      console.error("Error checking attempt scores:", error);
+      res.status(500).json({ message: "Error checking attempt scores." });
+    } else {
+      if (results.length > 0) {
+        console.log("Attempt scores already exist for this unit and activity.");
+        res.status(400).json({
+          message: "Attempt scores already exist for this unit and activity.",
+        });
+      } else {
+        // Update attempt scores and total score in the database
+        const query = `
+          INSERT INTO attempt_score (student_id, unit_no, act_no, attempt_one, attempt_two, attempt_three, total_score)
+          VALUES (?, ?, ?, ?, ?, ?, ?)
+          ON DUPLICATE KEY UPDATE
+          attempt_one = VALUES(attempt_one),
+          attempt_two = VALUES(attempt_two),
+          attempt_three = VALUES(attempt_three),
+          total_score = VALUES(total_score)
+        `;
+        const values = [
+          studentID,
+          unitNumber,
+          activityNumber,
+          attempt_1,
+          attempt_2,
+          attempt_3,
+          totalScore,
+        ];
+
+        // Execute the query using your established MySQL connection
+        db.query(query, values, (error, results) => {
+          if (error) {
+            console.error("Error storing attempt scores:", error);
+            res.status(500).json({ message: "Error storing attempt scores." });
+          } else {
+            console.log("Attempt scores stored successfully.");
+            res
+              .status(200)
+              .json({ message: "Attempt scores stored successfully." });
+          }
+        });
+      }
+    }
+  });
+});
+// ------------- DISPLAY ATTEMPT ACTIVITY 1 ---------- //
+app.get("/api/attemptScoresByMaxActId", (req, res) => {
+  const sqlQuery = `
+    SELECT a.*
+    FROM attempt_score a
+    INNER JOIN (
+      SELECT student_id, MAX(act_id) AS max_act_id
+      FROM attempt_score
+      GROUP BY student_id
+    ) b ON a.student_id = b.student_id AND a.act_id = b.max_act_id
+  `;
+  db.query(sqlQuery, (err, results) => {
+    if (err) {
+      console.error("Error fetching attempt scores:", err);
+      res.status(500).json({ message: "Error fetching attempt scores." });
+    } else {
+      console.log("Attempt scores fetched successfully:", results);
+      res.status(200).json(results);
+    }
+  });
+});
+
+// -------------- FETCH TOTAL SCORE FOR GRAPH ------------------ //
+app.get("/api/studentTotalScores", async (req, res) => {
+  const { studentId } = req.query;
+
+  try {
+    // Query to fetch total score, student info, activity number, and unit number from attempt_score for the given student ID
+    const query = `
+      SELECT s.id, s.firstName, s.lastName, ascore.total_score, ascore.act_no, ascore.unit_no
+      FROM student_list s
+      LEFT JOIN attempt_score ascore ON s.id = ascore.student_id
+      WHERE s.id = ?
+    `;
+
+    // Execute the query using your established MySQL connection
+    db.query(query, [studentId], (error, results) => {
+      if (error) {
+        console.error("Error fetching total scores:", error);
+        res.status(500).json({ message: "Error fetching total scores." });
+      } else {
+        const studentInfo = {
+          id: results[0].id,
+          firstName: results[0].firstName,
+          lastName: results[0].lastName,
+        };
+        const totalScores = results.map((result) => ({
+          totalScore: result.total_score,
+          activityNumber: result.act_no,
+          unitNumber: result.unit_no,
+        }));
+        console.log("Total scores and student info fetched successfully:", {
+          totalScores,
+          studentInfo,
+        });
+        // Send both totalScores and studentInfo in the response
+        res.status(200).json({ totalScores, studentInfo });
+      }
+    });
+  } catch (error) {
+    console.error("Error fetching total scores:", error);
+    res.status(500).json({ message: "Error fetching total scores." });
   }
 });
 
